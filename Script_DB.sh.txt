@@ -1,0 +1,48 @@
+ubuntu@pre-fundacion-chile-educar-bastion:~$ cat Script_DB.sh 
+#!/bin/bash
+
+# Dirección IP de la instancia de EC2
+EC2_IP="10.0.54.89"
+
+# Ruta en la máquina Ubuntu donde se guardará el archivo
+UBUNTU_DEST="/home/ubuntu/"
+
+# Definir variable de entorno para el script principal
+export ENVIRONMENT="pre-productivo"
+
+# Ejecutar el script en la instancia de EC2 para generar el archivo de respaldo
+ssh ec2-user@$EC2_IP 'export ENVIRONMENT="pre-productivo"; /home/ec2-user/Script2_DB.sh'
+
+# Verificar el estado de ejecución del script en la instancia de EC2
+if [ $? -eq 0 ]; then
+    echo "Script ejecutado exitosamente en la instancia de EC2."
+else
+    echo "Error durante la ejecución del script en la instancia de EC2."
+    exit 1
+fi
+
+# Obtener el nombre del archivo más reciente en la instancia de EC2
+REMOTE_FILE=$(ssh ec2-user@$EC2_IP 'ls -t /home/ec2-user/ | head -n1')
+
+# Agregar "pre-productivo" al nombre del archivo
+NEW_REMOTE_FILE="$UBUNTU_DEST$(echo $REMOTE_FILE | sed "s/.sql/-pre-productivo.sql/")"
+
+# Copiar el archivo desde la instancia de EC2 a la máquina Ubuntu
+scp ec2-user@$EC2_IP:/home/ec2-user/$REMOTE_FILE "$NEW_REMOTE_FILE"
+
+# Verificar el estado de la copia
+if [ $? -eq 0 ]; then
+    echo "Archivo copiado exitosamente a la máquina Ubuntu en $NEW_REMOTE_FILE"
+
+    # Eliminar el archivo en la instancia de EC2
+    ssh ec2-user@$EC2_IP "rm -f /home/ec2-user/$REMOTE_FILE"
+    echo "Archivo eliminado en la instancia de EC2."
+
+    # Eliminar el archivo en el contenedor Docker
+    CONTAINER_NAME_OR_ID=$(ssh ec2-user@$EC2_IP 'docker ps -q')
+    ssh ec2-user@$EC2_IP "docker exec $CONTAINER_NAME_OR_ID rm -f $REMOTE_FILE"
+    echo "Archivo eliminado en el contenedor Docker."
+else
+    echo "Error durante la copia del archivo. Verifica la configuración y vuelve a intentarlo."
+    exit 1
+fi

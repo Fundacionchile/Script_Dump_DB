@@ -1,0 +1,56 @@
+#!/bin/bash
+
+# Dar permisos de ejecución al script
+chmod +x $0
+
+# Nombre o ID del contenedor al que quieres ingresar
+CONTAINER_NAME_OR_ID=$(docker ps -q)
+
+# Verificar si se encontró algún contenedor
+if [ -z "$CONTAINER_NAME_OR_ID" ]; then
+    echo "No se encontraron contenedores en ejecución."
+    exit 1
+fi
+
+# Ruta para guardar el respaldo dentro del contenedor
+CONTAINER_BACKUP_DIR="/var/www/html/private-files/"
+DATE=$(date +"%Y%m%d%H%M%S")
+
+# Nombre del archivo de respaldo dentro del contenedor
+CONTAINER_BACKUP_FILE="$CONTAINER_BACKUP_DIR/fundacion_chile_educar-$DATE.sql"
+
+# Configuración de la base de datos
+DB_USER="root"
+DB_PASSWORD="gkPekWK74NcYA"
+DB_NAME="fundacion_chile_educar"
+
+# Dirección IP o nombre del host de MySQL dentro del contenedor
+MYSQL_HOST="pre-fundacion-chile-educar-rds.cziz01awzagk.us-east-1.rds.amazonaws.com"
+
+# Comando mysqldump dentro del contenedor
+docker exec $CONTAINER_NAME_OR_ID bash -c "
+    mysqldump -u $DB_USER -p$DB_PASSWORD -h $MYSQL_HOST $DB_NAME > $CONTAINER_BACKUP_FILE
+
+    # Verificar el estado de la ejecución del comando mysqldump
+    if [ \$? -eq 0 ]; then  
+        echo 'Respaldo completado exitosamente dentro del contenedor: $CONTAINER_BACKUP_FILE'
+    else
+        echo 'Error durante el respaldo. Verifica la configuración y vuelve a intentarlo.'
+        exit 1
+    fi
+"
+
+# Copiar el archivo desde el contenedor a la máquina EC2
+docker cp $CONTAINER_NAME_OR_ID:$CONTAINER_BACKUP_FILE /home/ec2-user/
+
+# Verificar el estado de la copia
+if [ $? -eq 0 ]; then
+    echo "Archivo copiado exitosamente a la máquina EC2: /home/ec2-user/$(basename $CONTAINER_BACKUP_FILE)"
+
+    # Eliminar el archivo en el contenedor Docker
+    docker exec $CONTAINER_NAME_OR_ID rm -f $CONTAINER_BACKUP_FILE
+    echo "Archivo eliminado en el contenedor Docker."
+else
+    echo "Error durante la copia del archivo. Verifica la configuración y vuelve a intentarlo."
+    exit 1
+fi
